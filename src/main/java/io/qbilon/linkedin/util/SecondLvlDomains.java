@@ -16,6 +16,7 @@ public class SecondLvlDomains {
     }
 
     private void init() {
+        slds.add("eu.com");
         slds.add("com.ac");
         slds.add("net.ac");
         slds.add("gov.ac");
