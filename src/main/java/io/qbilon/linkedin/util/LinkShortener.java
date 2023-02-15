@@ -18,6 +18,8 @@ public class LinkShortener {
     private void init() {
         shortener.add("bit.ly");
         shortener.add("fcld.ly");
+        shortener.add("linktr.ee");
+        shortener.add("cutt.ly");
     }
     
 }
