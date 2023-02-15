@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.microsoft.playwright.Browser;
@@ -68,6 +67,8 @@ public class CompanyScraper implements Callable<Integer> {
     private Path pathToExcel = currentDir.resolve("companies.xlsx").toAbsolutePath();
     private SecondLvlDomains slds = new SecondLvlDomains();
     private LinkShortener shortener = new LinkShortener();
+    private List<String> errors = new ArrayList<>();
+    private List<String> warnings = new ArrayList<>();
 
     private Map<String, String> companySizesMap = Map.of(
             "10", "companySize-B",
@@ -160,10 +161,8 @@ public class CompanyScraper implements Callable<Integer> {
         int currentCount = 1;
         long start = System.currentTimeMillis();
         for (Company company : companies) {
-            long currentTime = System.currentTimeMillis();
-            long elapsed = currentTime - start;
-            System.out.println("(" + currentCount + "/" + companies.size() + ") - " + toTime(elapsed) + " Scraping augmented data for "
-                    + company.getName() + ". ");
+            System.out.println(Util.progress(start, currentCount, companies.size()) + " Scraping augmented data for "
+                    + company.getName() + ".");
             scrapeAugmentedCompany(page, company);
             Util.wait(1000, 100);
             currentCount++;
@@ -180,20 +179,27 @@ public class CompanyScraper implements Callable<Integer> {
         context.close();
         browser.close();
 
+        if(warnings.size() > 0 || errors.size() > 0) {
+            System.out.println("During scraping the following Warnings/Errors occurred\n");
+            System.out.println("WARNINGS:");
+            for (String warning : warnings) {
+                System.out.println("\t" + warning);
+            }
+            if(verbose) {
+                System.out.println("\nERRORS:");
+                for (String error : errors) {
+                    System.out.println("\t" + error);
+                }
+            }
+        }
+
         System.out.println();
         System.out.println("Finished Scraping!");
-        System.out.println("Please review the domains of the scraped companies under " + pathToExcel.toString()
+        System.out.println("\nPlease review the domains of the scraped companies under " + pathToExcel.toString()
                 + "! They might contain link shortener links");
     }
 
-    private String toTime(long millis) {
-        return String.format("%02d:%02d:%02d",
-                TimeUnit.MILLISECONDS.toHours(millis),
-                TimeUnit.MILLISECONDS.toMinutes(millis) -
-                        TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(millis)),
-                TimeUnit.MILLISECONDS.toSeconds(millis) -
-                        TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis)));
-    }
+    
 
     private void scrapeAugmentedCompany(Page page, Company company) throws MalformedURLException, ParseException {
         try {
@@ -220,19 +226,19 @@ public class CompanyScraper implements Callable<Integer> {
                         }
                     }
                     if ("Website".equalsIgnoreCase(currentHeading)) {
-                        company.setDomain(getDomain(info.innerText().trim()));
+                        Locator link = info.locator("a");
+                        company.setDomain(getDomain(link.getAttribute("href").trim()));
                     }
                 }
             }
             String domain = company.getDomain();
             if (shortener.contains(domain)) {
-                System.out.println("\tWARNING: Detected link shortener for domain of " + company.getName());
+                warnings.add("WARNING: Detected link shortener for domain of " + company.getName());
             }
         } catch (Exception e) {
-            System.out.println(
-                    "\tSomething went wrong while fetching augmented data for " + company.getName() + "! Skipt it!");
+            errors.add("Something went wrong while fetching augmented data for " + company.getName() + "! We skipped it!");
             if (verbose) {
-                e.printStackTrace();
+                errors.add(Util.stackTraceToString(e));
             }
         }
     }
