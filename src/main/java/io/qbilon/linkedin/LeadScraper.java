@@ -65,9 +65,9 @@ public class LeadScraper implements Callable<Integer> {
     private File companiesExcelFile;
     @Option(names = { "-d",
             "--duplicates" }, description = "The excel with the emails of already existing leads used to filter duplicated ones. use it like this: d- path/to/excel.xlsx")
-    private File existingLeadEmails;
+    private File duplicatesExcelFile;
     @Option(names = { "-s",
-            "--search" }, description = "The search terms and the number of result pages to be included for the search (-1 means all pages). Use it like this: -s it=3 -s architect=2 -s test=-1")
+            "--search" }, description = "The search terms and the number of possible leads to be included for the search (-1 means all possible). Use it like this: -s it=35 -s architect=20 -s test=-1")
     private Map<String, Integer> searchTerms;
     @Option(names = { "-v",
             "--verbose" }, description = "Toggles verbose mode, e.g., prints exceptions")
@@ -76,12 +76,16 @@ public class LeadScraper implements Callable<Integer> {
             "--augment" }, description = "Toggles augmenting mode, i.e., all leads will be augmented with additional data like their last 3 jobs. This takes more time to scrape though")
     private boolean augment;
 
+
     private Path currentDir = Paths.get("").toAbsolutePath();
     private Path pathToContext = currentDir.resolve("state.json").toAbsolutePath();
     private Path pathToLeadExcel = currentDir.resolve("leads.xlsx").toAbsolutePath();
+    private Path pathToAugmentedLeadExcel = currentDir.resolve("augmentedleads.xlsx").toAbsolutePath();
     private SpecialChars specialChars = new SpecialChars();
     private RemovableNameSegments removableSegments = new RemovableNameSegments();
     private JobDescriptors jobDescriptors = new JobDescriptors();
+
+    private List<String> errors = new ArrayList<>();
 
     public static void main(String[] args) {
         int exitCode = new CommandLine(new LeadScraper()).execute(args);
@@ -96,8 +100,11 @@ public class LeadScraper implements Callable<Integer> {
         System.out.println("Starting LinkedIn Lead Scraper in directory " + currentDir + " with:");
         System.out.println("\temail = " + email);
         System.out.println("\tpassword = " + password);
-        System.out.println("\tcompaniesExcel = " + companiesExcelFile.getAbsolutePath().toString());
+        System.out.println("\tcompanies = " + companiesExcelFile.getAbsolutePath().toString());
+        System.out.println("\tduplicates = " + duplicatesExcelFile.getAbsolutePath().toString());
         System.out.println("\tsearchTerms = ");
+        System.out.println("\tverbose = " + verbose);
+        System.out.println("\taugment = " + augment);
         for (Entry<String, Integer> entry : searchTerms.entrySet()) {
             System.out.println("\t\t" + entry.getKey() + " = " + entry.getValue());
         }
@@ -130,7 +137,7 @@ public class LeadScraper implements Callable<Integer> {
             System.out.println("You need to provide a company excel file!");
             System.exit(1);
         }
-        if (existingLeadEmails == null || !existingLeadEmails.exists()) {
+        if (duplicatesExcelFile == null || !duplicatesExcelFile.exists()) {
             System.out.println("You need to provide an excel file containing existing lead emails!");
             System.exit(1);
         }
@@ -153,7 +160,7 @@ public class LeadScraper implements Callable<Integer> {
         Sheet companiesSheet = companiesExcel.getActiveSheet();
         Table<Company> companiesTable = companiesSheet.getTable("A1", Company.class);
 
-        ExcelDocument contactsExcel = new ExcelDocument(existingLeadEmails.getAbsolutePath().toString());
+        ExcelDocument contactsExcel = new ExcelDocument(duplicatesExcelFile.getAbsolutePath().toString());
         Sheet contactsSheet = contactsExcel.getActiveSheet();
         Table<Contact> contactsTable = contactsSheet.getTable("A1", Contact.class);
 
@@ -171,103 +178,137 @@ public class LeadScraper implements Callable<Integer> {
 
         System.out.println();
         System.out.println("Finished Scraping!");
-        System.out.println("Please review the scraped leads under " + pathToLeadExcel.toString() + "! They might contain compromised data or unfitting leads");
+        if(errors.size() > 0) {
+            System.out.println("\nERRORS:");
+            for (String error : errors) {
+                System.out.println("\t" + error);
+            }
+        }
+        String path = "";
+        if(augment) {
+            path = pathToAugmentedLeadExcel.toString();
+        } else {
+            path = pathToLeadExcel.toString();
+        }
+        System.out.println("\nPlease review the scraped leads under " + path + "! They might contain compromised data or unfitting leads");
     }
 
     private void augmentAndSaveScrapedLeads(Page page, List<Lead> leads) {
         System.out.println("Augmenting scraped leads with additional job information.");
+        Util.touchFile(pathToAugmentedLeadExcel);
+        ExcelDocument doc = new ExcelDocument();
+        long start = System.currentTimeMillis();
+        int count = 1;
         for (Lead lead : leads) {
-            page.navigate(lead.getProfileLink());
-            page.waitForSelector("section:has(> #experience)");
-            Util.wait(500, 100);
-            // select the parent of the experience div
-            Locator experienceSection = page.locator("section:has(> #experience)");
-            Locator stations = experienceSection.locator("> div.pvs-list__outer-container > ul.pvs-list > li");
-
-            List<String> jobDescriptions = new ArrayList<>(); 
-            int maxNumJobs = 4;
-            jobs:for (Locator station : stations.all()) {
-                if(jobDescriptions.size() >= maxNumJobs) {
-                    break;
-                }
-                Locator subStations = station.locator("div.pvs-entity--with-path");
-                if(subStations.count() > 0) {
-                    // scrape the list of substations in a station card
-                    for (Locator subStation : subStations.all()) {
-                        if(jobDescriptions.size() >= maxNumJobs) {
-                            break jobs;
+            try {
+                System.out.println(Util.progress(start, count, leads.size()) + "Augmenting " + lead.getEmail());
+                page.navigate(lead.getProfileLink());
+                page.waitForSelector("section:has(> #experience)");
+                Util.wait(500, 100);
+                // select the parent of the experience div
+                Locator experienceSection = page.locator("section:has(> #experience)");
+                Locator stations = experienceSection.locator("> div.pvs-list__outer-container > ul.pvs-list > li");
+    
+                List<String> jobDescriptions = new ArrayList<>(); 
+                int maxNumJobs = 4;
+                jobs:for (Locator station : stations.all()) {
+                    if(jobDescriptions.size() >= maxNumJobs) {
+                        break;
+                    }
+                    Locator subStations = station.locator("div.pvs-entity--with-path");
+                    if(subStations.count() > 0) {
+                        // scrape the list of substations in a station card
+                        for (Locator subStation : subStations.all()) {
+                            try {
+                                if(jobDescriptions.size() >= maxNumJobs) {
+                                    break jobs;
+                                }
+                                Locator jobTitle = subStation.locator("a div:first-child");
+                                jobDescriptions.add(jobTitle.textContent().trim());
+                            } catch (Exception e) {
+                                // ignore and skip
+                            }
                         }
-                        Locator jobTitle = subStation.locator("a div:first-child");
+                    } else {
+                        Locator jobTitle = station.locator("span.t-bold > span[aria-hidden]");
                         jobDescriptions.add(jobTitle.textContent().trim());
                     }
-                } else {
-                    Locator jobTitle = station.locator("span.t-bold > span[aria-hidden]");
-                    jobDescriptions.add(jobTitle.textContent().trim());
+                }
+    
+                if(jobDescriptions.size() >= 1) {
+                    if(!lead.getJobTitle().equals(jobDescriptions.get(0))) {
+                        lead.setJobTitle(jobDescriptions.get(0));
+                    }
+                }
+                if(jobDescriptions.size() >= 2) {
+                    lead.setPreviousJobTitle1(jobDescriptions.get(1));
+                }
+                if(jobDescriptions.size() >= 3) {
+                    lead.setPreviousJobTitle2(jobDescriptions.get(2));
+                }
+                if(jobDescriptions.size() >= 4) {
+                    lead.setPreviousJobTitle3(jobDescriptions.get(3));
+                }
+            } catch (Exception e) {
+                errors.add("Failed to augment lead " + lead.getFirstName() + " " + lead.getLastName() + "! Skip it.");
+                if(verbose) {
+                    errors.add(Util.stackTraceToString(e));
                 }
             }
-
-            if(jobDescriptions.size() >= 1) {
-                if(!lead.getJobTitle().equals(jobDescriptions.get(0))) {
-                    lead.setJobTitle(jobDescriptions.get(0));
-                }
-            }
-            if(jobDescriptions.size() >= 2) {
-                lead.setPreviousJobTitle1(jobDescriptions.get(1));
-            }
-            if(jobDescriptions.size() >= 3) {
-                lead.setPreviousJobTitle2(jobDescriptions.get(2));
-            }
-            if(jobDescriptions.size() >= 4) {
-                lead.setPreviousJobTitle3(jobDescriptions.get(3));
-            }
+            count ++;
         }
 
-        ExcelDocument doc = new ExcelDocument();
         doc.getActiveSheet().insertTable("A1", leads);
-        doc.saveAs(pathToLeadExcel.toString());
+        doc.saveAs(pathToAugmentedLeadExcel.toString());
         doc.close();
     }
 
     private List<Lead> scrapeAndSaveRawDeduplicatedLeads(Page page, Table<Company> companyTable, Set<String> existingContacts) {
-        Map<String, Lead> deduplicatedLeads = new HashMap<>();
+        Map<String, Lead> allDeduplicatedLeads = new HashMap<>();
+        Util.touchFile(pathToLeadExcel);
+        ExcelDocument doc = new ExcelDocument();
         // Search all Companies for all searchterms
         for (Company company : companyTable) {
-            System.out.println();
-            navigateToInitialSearchPage(page, company, searchTerms.entrySet().iterator().next().getKey());
-            Map<String, List<String>> urlParams = null;
             try {
+                System.out.println();
+                navigateToInitialSearchPage(page, company, searchTerms.entrySet().iterator().next().getKey());
+                Map<String, List<String>> urlParams = null;
                 urlParams = Util.urlParams(new URL(page.url()));
-            } catch (MalformedURLException e) {
-                e.printStackTrace();
-            }
-            for (Entry<String, Integer> entry : searchTerms.entrySet()) {
-                Integer currentPage = 1;
-                Integer maxPage = entry.getValue();
-                String searchTerm = entry.getKey();
-                try {
-                    while (!Util.isEmptySearchPage(page)) {
-                        System.out.println("Scraping raw lead data for '" +  company.getName() + "' and search term '" + searchTerm + "' on page " + currentPage);
-                        scrapeRawLeads(page, company, deduplicatedLeads, existingContacts);
-                        page.navigate(createLeadSearchUrl(urlParams, searchTerm, currentPage));
-                        Util.wait(1000, 200);
-                        currentPage++;
-                        if (currentPage > maxPage) {
-                            break;
+                for (Entry<String, Integer> entry : searchTerms.entrySet()) {
+                    Map<String, Lead> deduplicatedLeads = new HashMap<>();
+                    Integer currentPage = 1;
+                    Integer maxNrLeads = entry.getValue();
+                    String searchTerm = entry.getKey();
+                    try {
+                        while (!Util.isEmptySearchPage(page) && (maxNrLeads == -1 || maxNrLeads > deduplicatedLeads.size())) {
+                            System.out.println("Scraping raw lead data for '" +  company.getName() + "' and search term '" + searchTerm + "' on page " + currentPage);
+                            scrapeRawLeads(page, company, deduplicatedLeads, existingContacts, maxNrLeads);
+                            page.navigate(createLeadSearchUrl(urlParams, searchTerm, currentPage));
+                            Util.wait(1000, 200);
+                            currentPage++;
+                            if (currentPage >= maxNrLeads) {
+                                break;
+                            }
+                        }
+                    } catch (Exception e) {
+                        errors.add("Failed to scrape leads for '" + company.getName() + "' and search term '" + searchTerm + "' on page " + currentPage + "!. Skip it!");
+                        if(verbose) {
+                            errors.add(Util.stackTraceToString(e));
                         }
                     }
-                } catch (Exception e) {
-                    System.out.println("Failed to scrape leads for '" + company.getName() + "' and search term '" + searchTerm + "' on page " + currentPage + "!. Skip it!");
-                    if(verbose) {
-                        e.printStackTrace();
-                    }
+                    allDeduplicatedLeads.putAll(deduplicatedLeads);
+
+                }
+            } catch (Exception e) {
+                errors.add("Failed to scrape leads for '" + company.getName() + "!. Skip it!");
+                if(verbose) {
+                    errors.add(Util.stackTraceToString(e));
                 }
             }
         }
-        List<Lead> leads = new ArrayList<>();
-        leads.addAll(deduplicatedLeads.values());
 
-        Util.touchFile(pathToLeadExcel);
-        ExcelDocument doc = new ExcelDocument();
+        List<Lead> leads = new ArrayList<>();
+        leads.addAll(allDeduplicatedLeads.values());
         doc.getActiveSheet().insertTable("A1", leads);
         doc.saveAs(pathToLeadExcel.toString());
         doc.close();
@@ -290,32 +331,36 @@ public class LeadScraper implements Callable<Integer> {
         return result;
     }
 
-    private void scrapeRawLeads(Page page, Company company, Map<String, Lead> leads, Set<String> existingContacts) {
+    private void scrapeRawLeads(Page page, Company company, Map<String, Lead> leads, Set<String> existingContacts, Integer maxNrLeads) {
         page.waitForSelector(".search-results-container");
         Locator resultContainer = page.locator(".search-results-container");
         Locator resultItems = resultContainer.locator("li.reusable-search__result-container");
         for (Locator resultItem : resultItems.all()) {
-            try {
-                Locator titleLink = resultItem.locator("span.entity-result__title-text > a");
-                Locator nameSpan = titleLink.locator("span[aria-hidden]");
-                Locator jobSpan = resultItem.locator(".entity-result__primary-subtitle");
-                
-                Lead lead = new Lead();
-                String link = titleLink.getAttribute("href");
-                lead.setProfileLink(link.substring(0, link.indexOf("?")));
-                setFirstAndLastName(lead, nameSpan.textContent().trim());
-                lead.setJobTitle(getJobTitle(company, jobSpan.textContent().trim()));
-                lead.setEmail(getEmail(lead, company));
-                lead.setIndustry(company.getIndustry());
-
-                if(!existingContacts.contains(lead.getEmail())) {
-                    leads.put(lead.getEmail(), lead);
+            if(maxNrLeads == -1 || maxNrLeads > leads.size()) {
+                try {
+                    Locator titleLink = resultItem.locator("span.entity-result__title-text > a");
+                    Locator nameSpan = titleLink.locator("span[aria-hidden]");
+                    Locator jobSpan = resultItem.locator(".entity-result__primary-subtitle");
+                    
+                    Lead lead = new Lead();
+                    String link = titleLink.getAttribute("href");
+                    lead.setProfileLink(link.substring(0, link.indexOf("?")));
+                    setFirstAndLastName(lead, nameSpan.textContent().trim());
+                    lead.setJobTitle(getJobTitle(company, jobSpan.textContent().trim()));
+                    lead.setEmail(getEmail(lead, company));
+                    lead.setIndustry(company.getIndustry());
+    
+                    if(!existingContacts.contains(lead.getEmail())) {
+                        leads.put(lead.getEmail(), lead);
+                    }
+                } catch (Exception e) {
+                    errors.add("Failed to scrape single lead data! Skip it.");
+                    if(verbose) {
+                       errors.add(Util.stackTraceToString(e));
+                    }
                 }
-            } catch (Exception e) {
-                System.out.println("Failed to scrape single lead data! Skipt it.");
-                if(verbose) {
-                    e.printStackTrace();
-                }
+            } else {
+                break;
             }
         }
     }
