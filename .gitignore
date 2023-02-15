@@ -1,0 +1,47 @@
+# Created by https://www.gitignore.io/api/maven,visualstudiocode
+# Edit at https://www.gitignore.io/?templates=maven,visualstudiocode
+
+### Sometimes VSCode generates a lot of code in bin folders that should not be checked in ###
+bin/
+
+### Maven ###
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+.flattened-pom.xml
+
+### VisualStudioCode ###
+!.vscode/tasks.json
+!.vscode/extensions.json
+### VisualStudioCode Patch ###
+# Ignore all local history of files
+.history
+
+# Java annotation processor (APT)
+.factorypath
+
+# Eclipse Core
+.project
+.settings
+
+# JDT-specific (Eclipse Java Development Tools)
+.classpath
+
+# Log Files 
+.log
+
+# Theia
+.theia/*
+
+# End of https://www.gitignore.io/api/maven,visualstudiocode
+
+.idea/
+
+*.iml
