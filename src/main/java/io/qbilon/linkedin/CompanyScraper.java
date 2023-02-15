@@ -156,7 +156,7 @@ public class CompanyScraper implements Callable<Integer> {
         }
 
         System.out.println();
-        int currentCount = 0;
+        int currentCount = 1;
         int tenPercent = companies.size() / 10;
         long start = System.currentTimeMillis();
         for (Company company : companies) {
@@ -164,7 +164,7 @@ public class CompanyScraper implements Callable<Integer> {
                 long currentTime = System.currentTimeMillis();
                 long elapsed = currentTime - start;
                 System.out.println();
-                System.out.println("Currently at " + ((currentCount / tenPercent)*10) + "%");
+                System.out.println("Currently at " + currentCount + "/" + companies.size());
                 System.out.println("Time elapsed: " + String.format("%d hours, %d minutes, %d seconds", TimeUnit.MILLISECONDS.toHours(elapsed), TimeUnit.MILLISECONDS.toMinutes(elapsed), TimeUnit.MILLISECONDS.toSeconds(elapsed)));
                 System.out.println();
             }
