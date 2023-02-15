@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.microsoft.playwright.Browser;
@@ -56,6 +57,8 @@ public class CompanyScraper implements Callable<Integer> {
     @Option(names = { "-v",
             "--verbose" }, description = "Toggles verbose mode, e.g., prints exceptions")
     private boolean verbose;
+    @Option(names = { "-limit" }, description = "An optional limit to use for the maximum amount of companies to scrape", defaultValue = "-1")
+    private int limit;
 
     private List<String> translatedSizes;
 
@@ -91,15 +94,17 @@ public class CompanyScraper implements Callable<Integer> {
         System.out.println("\tlocations = " + String.join(", ", locations));
         System.out.println("\tindustries = " + String.join(", ", industries));
         System.out.println("\tsizes = " + String.join(", ", sizes));
+        System.out.println("\tlimit = " + limit);
         System.out.println();
 
         try (Playwright playwright = Playwright.create()) {
             run(playwright);
         } catch (Exception e) {
-            if(verbose) {
+            if (verbose) {
                 e.printStackTrace();
             }
-            System.out.println("Something went wrong. Sometimes this is due to a timing error. In this case just retry it. If the error persists, you could toggle verbose mode with '-v' in order to get more information");
+            System.out.println(
+                    "Something went wrong. Sometimes this is due to a timing error. In this case just retry it. If the error persists, you could toggle verbose mode with '-v' in order to get more information");
             return 1;
         }
         return 0;
@@ -140,9 +145,9 @@ public class CompanyScraper implements Callable<Integer> {
         int currentPage = 1;
         Map<String, List<String>> urlParams = Util.urlParams(new URL(page.url()));
         List<Company> companies = new ArrayList<>();
-        
+
         System.out.println();
-        while(!Util.isEmptySearchPage(page)) {
+        while (!Util.isEmptySearchPage(page) && (limit == -1 || limit >= companies.size())) {
             System.out.println("Scraping raw data for company search page " + currentPage);
             scrapeRawCompanies(page, companies);
             currentPage++;
@@ -151,9 +156,21 @@ public class CompanyScraper implements Callable<Integer> {
         }
 
         System.out.println();
+        int currentCount = 0;
+        int tenPercent = companies.size() / 10;
+        long start = System.currentTimeMillis();
         for (Company company : companies) {
+            if(currentCount % (tenPercent) == 0) {
+                long currentTime = System.currentTimeMillis();
+                long elapsed = currentTime - start;
+                System.out.println();
+                System.out.println("Currently at " + ((currentCount / tenPercent)*10) + "%");
+                System.out.println("Time elapsed: " + String.format("%d hours, %d minutes, %d seconds", TimeUnit.MILLISECONDS.toHours(elapsed), TimeUnit.MILLISECONDS.toMinutes(elapsed), TimeUnit.MILLISECONDS.toSeconds(elapsed)));
+                System.out.println();
+            }
             scrapeAugmentedCompany(page, company);
             Util.wait(1000, 100);
+            currentCount++;
         }
 
         Util.touchFile(pathToExcel);
@@ -161,7 +178,7 @@ public class CompanyScraper implements Callable<Integer> {
         doc.getActiveSheet().insertTable("A1", companies);
         doc.saveAs(pathToExcel.toString());
         doc.close();
-        
+
         // Save current browser state
         context.storageState(new BrowserContext.StorageStateOptions().setPath(pathToContext));
         context.close();
@@ -169,7 +186,8 @@ public class CompanyScraper implements Callable<Integer> {
 
         System.out.println();
         System.out.println("Finished Scraping!");
-        System.out.println("Please review the domains of the scraped companies under " + pathToExcel.toString() + "! They might contain link shortener links");
+        System.out.println("Please review the domains of the scraped companies under " + pathToExcel.toString()
+                + "! They might contain link shortener links");
     }
 
     private void scrapeAugmentedCompany(Page page, Company company) throws MalformedURLException, ParseException {
@@ -223,12 +241,12 @@ public class CompanyScraper implements Callable<Integer> {
         String seg1 = segments[segments.length - 2];
         String seg2 = segments[segments.length - 1];
         String domain = seg1 + "." + seg2;
-        if(segments.length > 2) {
-           // maybe its a second level domain?
-           if(slds.contains(domain)) {
-             // take the last three segments
-             domain = segments[segments.length - 3] + "." + domain;
-           } 
+        if (segments.length > 2) {
+            // maybe its a second level domain?
+            if (slds.contains(domain)) {
+                // take the last three segments
+                domain = segments[segments.length - 3] + "." + domain;
+            }
         }
         return domain;
     }
@@ -239,11 +257,16 @@ public class CompanyScraper implements Callable<Integer> {
         Locator resultItems = resultContainer.locator("li.reusable-search__result-container");
         for (Locator resultItem : resultItems.all()) {
             try {
-                Company company = new Company();
-                Locator titleSpan = resultItem.locator("span.entity-result__title-text");
-                company.setName(titleSpan.textContent().trim());
-                company.setLink(titleSpan.locator("a").getAttribute("href") + "about");
-                companies.add(company);
+                if(limit == -1 || limit >= companies.size()) {
+                    Company company = new Company();
+                    Locator titleSpan = resultItem.locator("span.entity-result__title-text");
+                    company.setName(titleSpan.textContent().trim());
+                    company.setLink(titleSpan.locator("a").getAttribute("href") + "about");
+                    companies.add(company);
+                } else {
+                    System.out.println("Reached limit of " + limit + " companies!");
+                    break;
+                }
             } catch (Exception e) {
                 System.out.println("Something went wrong during try to fetch a raw company dataset. Skip it!");
                 if(verbose) {
@@ -255,17 +278,15 @@ public class CompanyScraper implements Callable<Integer> {
 
     private String createCompanySearchUrl(Map<String, List<String>> urlParams, int currentPage) {
         String result = Util.createUrl(
-            "https://www.linkedin.com/search/results/companies/", 
-            urlParams, 
-            List.of(
-                "companyHqGeo", 
-                "companySize", 
-                "industryCompanyVertical", 
-                "origin=FACETED_SEARCH", 
-                "page=" + currentPage, 
-                "sid"
-            )
-        );
+                "https://www.linkedin.com/search/results/companies/",
+                urlParams,
+                List.of(
+                        "companyHqGeo",
+                        "companySize",
+                        "industryCompanyVertical",
+                        "origin=FACETED_SEARCH",
+                        "page=" + currentPage,
+                        "sid"));
         return result;
     }
 
@@ -276,11 +297,9 @@ public class CompanyScraper implements Callable<Integer> {
         Util.buttonWithInput(page, "Branche", "Branche hinzufügen", industries);
         Util.buttonWithMultiSelection(page, "Unternehmensgröße", translatedSizes);
         // if we do not wait until all parts are in the url the url is incorrect
-        page.waitForURL(url -> 
-            url.contains("companySize") &&
-            url.contains("industryCompanyVertical") &&
-            url.contains("companyHqGeo") &&
-            url.contains("sid")
-        );
+        page.waitForURL(url -> url.contains("companySize") &&
+                url.contains("industryCompanyVertical") &&
+                url.contains("companyHqGeo") &&
+                url.contains("sid"));
     }
 }
