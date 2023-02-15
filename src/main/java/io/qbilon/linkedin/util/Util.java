@@ -1,6 +1,8 @@
 package io.qbilon.linkedin.util;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -13,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.microsoft.playwright.Browser;
@@ -187,6 +190,28 @@ public class Util {
             waitTime = waitTime - variation;
         }
         wait(waitTime);
+    }
+
+    public static String stackTraceToString(Exception e) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        e.printStackTrace(pw);
+        return sw.toString();
+    }
+
+    public static String progress(Long startTime, int count, int size) {
+        long currentTime = System.currentTimeMillis();
+        long elapsed = currentTime - startTime;
+        return "(" + count + "/" + size + ") - " + toTime(elapsed) + " | ";
+    }
+
+    private static String toTime(long millis) {
+        return String.format("%02d:%02d:%02d",
+                TimeUnit.MILLISECONDS.toHours(millis),
+                TimeUnit.MILLISECONDS.toMinutes(millis) -
+                        TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(millis)),
+                TimeUnit.MILLISECONDS.toSeconds(millis) -
+                        TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis)));
     }
 
 }
