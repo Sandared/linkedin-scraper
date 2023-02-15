@@ -303,8 +303,9 @@ public class LeadScraper implements Callable<Integer> {
                             }
                         }
                     }
+                    System.out.println("Found " + deduplicatedLeads.size() + " potential leads.");
                     allDeduplicatedLeads.putAll(deduplicatedLeads);
-
+                    System.out.println("Currently " + allDeduplicatedLeads.size() + " potential leads in total");
                 }
             } catch (Exception e) {
                 errors.add("Failed to scrape leads for '" + company.getName() + "!. Skip it!");
@@ -415,7 +416,7 @@ public class LeadScraper implements Callable<Integer> {
 
     // https://www.linkedin.com/search/results/people/?currentCompany=["1043"]&geoUrn=["101282230"]&keywords=it&origin=GLOBAL_SEARCH_HEADER&sid=:lw
     private void navigateToInitialSearchPage(Page page, Company company, String searchTerm) {
-        System.out.println("Navigating to search page for " + company.getName() + " with search tearm " + searchTearm + " ...");
+        System.out.println("Navigating to search page for " + company.getName() + " with search tearm " + searchTerm + " ...");
         page.navigate("https://www.linkedin.com/search/results/people/?keywords=" + searchTerm
                 + "&origin=SWITCH_SEARCH_VERTICAL");
         Util.buttonWithInput(page, "Standorte", "Ort hinzufügen", locations);
