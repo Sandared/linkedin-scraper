@@ -270,6 +270,9 @@ public class LeadScraper implements Callable<Integer> {
         Util.touchFile(pathToLeadExcel);
         ExcelDocument doc = new ExcelDocument();
         // Search all Companies for all searchterms
+        long start = System.currentTimeMillis();
+        int counter = 1;
+        int total = companyTable.getRecords().size();
         for (Company company : companyTable) {
             try {
                 System.out.println();
@@ -286,7 +289,7 @@ public class LeadScraper implements Callable<Integer> {
                     while (!Util.isEmptySearchPage(page)
                             && (maxNrLeads == -1 || maxNrLeads > deduplicatedLeads.size())) {
                         try {
-                            System.out.println("Scraping raw lead data for '" + company.getName()
+                            System.out.println(Util.progress(start, counter, total) + "Scraping raw lead data for '" + company.getName()
                                     + "' and search term '" + searchTerm + "' on page " + currentPage);
                             scrapeRawLeads(page, company, deduplicatedLeads, existingContacts, maxNrLeads);
                             currentPage++;
@@ -311,7 +314,8 @@ public class LeadScraper implements Callable<Integer> {
                     errors.add(Util.stackTraceToString(e));
                 }
             }
-            System.out.println("Currently found " + allDeduplicatedLeads.size() + " potential, deduplicated leads in total");
+            System.out.println(Util.progress(start, counter, total) + "Currently found " + allDeduplicatedLeads.size() + " potential, deduplicated leads in total");
+            counter++;
         }
 
         List<Lead> leads = new ArrayList<>();
