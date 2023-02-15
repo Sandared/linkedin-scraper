@@ -173,38 +173,45 @@ public class CompanyScraper implements Callable<Integer> {
     }
 
     private void scrapeAugmentedCompany(Page page, Company company) throws MalformedURLException, ParseException {
-        page.navigate(company.getLink());
-        page.waitForSelector("dl.overflow-hidden");
-        Locator infoTable = page.locator("dl.overflow-hidden");
-        // get all children via xpath
-        Locator infos = infoTable.locator("xpath=*");
-        String currentHeading = "";
-        for (Locator info : infos.all()) { 
-            String tagName = info.elementHandle().getProperty("tagName").toString();
-            if(tagName.equalsIgnoreCase("dt")) {
-                currentHeading = info.innerText().trim();
-            } else {
-                if("Branche".equalsIgnoreCase(currentHeading)) {
-                    company.setIndustry(info.innerText().trim());
-                }
-                if("Größe".equalsIgnoreCase(currentHeading)) {
-                    String text = info.innerText().trim();
-                    if(text.contains(" auf LinkedIn")) {
-                        company.setEmployeesOnLinkedIn(text.substring(0, text.indexOf(" auf LinkedIn")));
-                    } else {
-                        company.setSize(text);
+        try {
+            page.navigate(company.getLink());
+            page.waitForSelector("dl.overflow-hidden");
+            Locator infoTable = page.locator("dl.overflow-hidden");
+            // get all children via xpath
+            Locator infos = infoTable.locator("xpath=*");
+            String currentHeading = "";
+            for (Locator info : infos.all()) {
+                String tagName = info.elementHandle().getProperty("tagName").toString();
+                if (tagName.equalsIgnoreCase("dt")) {
+                    currentHeading = info.innerText().trim();
+                } else {
+                    if ("Branche".equalsIgnoreCase(currentHeading)) {
+                        company.setIndustry(info.innerText().trim());
+                    }
+                    if ("Größe".equalsIgnoreCase(currentHeading)) {
+                        String text = info.innerText().trim();
+                        if (text.contains(" auf LinkedIn")) {
+                            company.setEmployeesOnLinkedIn(text.substring(0, text.indexOf(" auf LinkedIn")));
+                        } else {
+                            company.setSize(text);
+                        }
+                    }
+                    if ("Website".equalsIgnoreCase(currentHeading)) {
+                        company.setDomain(getDomain(info.innerText().trim()));
                     }
                 }
-                if("Website".equalsIgnoreCase(currentHeading)) {
-                    company.setDomain(getDomain(info.innerText().trim()));
-                }
             }
-        }
-        String domain = company.getDomain();
-        if(shortener.contains(domain)) {
-            System.out.println("WARNING: Detected link shortener for domain of " + company.getName());
-        } else {
-            System.out.println("Scraped augmented data for " + company.getName());
+            String domain = company.getDomain();
+            if (shortener.contains(domain)) {
+                System.out.println("WARNING: Detected link shortener for domain of " + company.getName());
+            } else {
+                System.out.println("Scraped augmented data for " + company.getName());
+            }
+        } catch (Exception e) {
+            System.out.println("Something went wrong while fetching augmented data for " + company.getName() + "! Skipt it!");
+            if(verbose) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -231,11 +238,18 @@ public class CompanyScraper implements Callable<Integer> {
         Locator resultContainer = page.locator(".search-results-container");
         Locator resultItems = resultContainer.locator("li.reusable-search__result-container");
         for (Locator resultItem : resultItems.all()) {
-            Company company = new Company();
-            Locator titleSpan = resultItem.locator("span.entity-result__title-text");
-            company.setName(titleSpan.textContent().trim());
-            company.setLink(titleSpan.locator("a").getAttribute("href") + "about");
-            companies.add(company);
+            try {
+                Company company = new Company();
+                Locator titleSpan = resultItem.locator("span.entity-result__title-text");
+                company.setName(titleSpan.textContent().trim());
+                company.setLink(titleSpan.locator("a").getAttribute("href") + "about");
+                companies.add(company);
+            } catch (Exception e) {
+                System.out.println("Something went wrong during try to fetch a raw company dataset. Skip it!");
+                if(verbose) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 
