@@ -57,7 +57,8 @@ public class CompanyScraper implements Callable<Integer> {
     @Option(names = { "-v",
             "--verbose" }, description = "Toggles verbose mode, e.g., prints exceptions")
     private boolean verbose;
-    @Option(names = { "-limit" }, description = "An optional limit to use for the maximum amount of companies to scrape", defaultValue = "-1")
+    @Option(names = {
+            "-limit" }, description = "An optional limit to use for the maximum amount of companies to scrape", defaultValue = "-1")
     private int limit;
 
     private List<String> translatedSizes;
@@ -157,17 +158,12 @@ public class CompanyScraper implements Callable<Integer> {
 
         System.out.println();
         int currentCount = 1;
-        int tenPercent = companies.size() / 10;
         long start = System.currentTimeMillis();
         for (Company company : companies) {
-            if(currentCount % (tenPercent) == 0) {
-                long currentTime = System.currentTimeMillis();
-                long elapsed = currentTime - start;
-                System.out.println();
-                System.out.println("Currently at " + currentCount + "/" + companies.size());
-                System.out.println("Time elapsed: " + String.format("%d hours, %d minutes, %d seconds", TimeUnit.MILLISECONDS.toHours(elapsed), TimeUnit.MILLISECONDS.toMinutes(elapsed), TimeUnit.MILLISECONDS.toSeconds(elapsed)));
-                System.out.println();
-            }
+            long currentTime = System.currentTimeMillis();
+            long elapsed = currentTime - start;
+            System.out.println("(" + currentCount + "/" + companies.size() + ") - " + toTime(elapsed) + " Scraping augmented data for "
+                    + company.getName() + ". ");
             scrapeAugmentedCompany(page, company);
             Util.wait(1000, 100);
             currentCount++;
@@ -188,6 +184,15 @@ public class CompanyScraper implements Callable<Integer> {
         System.out.println("Finished Scraping!");
         System.out.println("Please review the domains of the scraped companies under " + pathToExcel.toString()
                 + "! They might contain link shortener links");
+    }
+
+    private String toTime(long millis) {
+        return String.format("%02d:%02d:%02d",
+                TimeUnit.MILLISECONDS.toHours(millis),
+                TimeUnit.MILLISECONDS.toMinutes(millis) -
+                        TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(millis)),
+                TimeUnit.MILLISECONDS.toSeconds(millis) -
+                        TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis)));
     }
 
     private void scrapeAugmentedCompany(Page page, Company company) throws MalformedURLException, ParseException {
@@ -221,13 +226,12 @@ public class CompanyScraper implements Callable<Integer> {
             }
             String domain = company.getDomain();
             if (shortener.contains(domain)) {
-                System.out.println("WARNING: Detected link shortener for domain of " + company.getName());
-            } else {
-                System.out.println("Scraped augmented data for " + company.getName());
+                System.out.println("\tWARNING: Detected link shortener for domain of " + company.getName());
             }
         } catch (Exception e) {
-            System.out.println("Something went wrong while fetching augmented data for " + company.getName() + "! Skipt it!");
-            if(verbose) {
+            System.out.println(
+                    "\tSomething went wrong while fetching augmented data for " + company.getName() + "! Skipt it!");
+            if (verbose) {
                 e.printStackTrace();
             }
         }
@@ -257,7 +261,7 @@ public class CompanyScraper implements Callable<Integer> {
         Locator resultItems = resultContainer.locator("li.reusable-search__result-container");
         for (Locator resultItem : resultItems.all()) {
             try {
-                if(limit == -1 || limit >= companies.size()) {
+                if (limit == -1 || limit >= companies.size()) {
                     Company company = new Company();
                     Locator titleSpan = resultItem.locator("span.entity-result__title-text");
                     company.setName(titleSpan.textContent().trim());
@@ -269,7 +273,7 @@ public class CompanyScraper implements Callable<Integer> {
                 }
             } catch (Exception e) {
                 System.out.println("Something went wrong during try to fetch a raw company dataset. Skip it!");
-                if(verbose) {
+                if (verbose) {
                     e.printStackTrace();
                 }
             }
