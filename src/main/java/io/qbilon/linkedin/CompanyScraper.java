@@ -59,6 +59,9 @@ public class CompanyScraper implements Callable<Integer> {
     @Option(names = {
             "-limit" }, description = "An optional limit to use for the maximum amount of companies to scrape", defaultValue = "-1")
     private int limit;
+    @Option(names = { "-d",
+        "-delay" }, description = "An optional delay in ms to use for all website interactions (default is 1000ms, variance is 10%)", defaultValue = "1000")
+    private int delay;
 
     private List<String> translatedSizes;
 
@@ -69,6 +72,7 @@ public class CompanyScraper implements Callable<Integer> {
     private LinkShortener shortener = new LinkShortener();
     private List<String> errors = new ArrayList<>();
     private List<String> warnings = new ArrayList<>();
+    private Util util;
 
     private Map<String, String> companySizesMap = Map.of(
             "10", "companySize-B",
@@ -88,6 +92,7 @@ public class CompanyScraper implements Callable<Integer> {
     @Override
     public Integer call() {
         validateInput();
+        init();
 
         System.out.println();
         System.out.println("Starting LinkedIn Company Scraper in directory " + currentDir + " with:");
@@ -97,6 +102,7 @@ public class CompanyScraper implements Callable<Integer> {
         System.out.println("\tindustries = " + String.join(", ", industries));
         System.out.println("\tsizes = " + String.join(", ", sizes));
         System.out.println("\tlimit = " + limit);
+        System.out.println("\tdelay = " + delay);
         System.out.println();
 
         try (Playwright playwright = Playwright.create()) {
@@ -106,10 +112,14 @@ public class CompanyScraper implements Callable<Integer> {
                 e.printStackTrace();
             }
             System.out.println(
-                    "Something went wrong. Sometimes this is due to a timing error. In this case just retry it. If the error persists, you could toggle verbose mode with '-v' in order to get more information");
+                    "ERROR: Something went wrong. Sometimes this is due to a timing error. In this case just retry it. If the error persists, you could toggle verbose mode with '-v' in order to get more information");
             return 1;
         }
         return 0;
+    }
+
+    private void init() {
+        util = new Util(verbose, delay);
     }
 
     private void validateInput() {
@@ -138,37 +148,37 @@ public class CompanyScraper implements Callable<Integer> {
     }
 
     private void run(Playwright playwright) throws MalformedURLException, ParseException {
-        Browser browser = Util.createBrowser(playwright, pathToContext);
+        Browser browser = util.createBrowser(playwright, pathToContext);
         BrowserContext context = browser.contexts().get(0);
-        Page page = Util.loginToLinkedIn(context, email, password);
+        Page page = util.loginToLinkedIn(context, email, password);
 
         navigateToInitialSearchPage(page);
 
         int currentPage = 1;
-        Map<String, List<String>> urlParams = Util.urlParams(new URL(page.url()));
+        Map<String, List<String>> urlParams = util.urlParams(new URL(page.url()));
         List<Company> companies = new ArrayList<>();
 
         System.out.println();
-        while (!Util.isEmptySearchPage(page) && (limit == -1 || limit >= companies.size())) {
-            System.out.println("Scraping raw data for company search page " + currentPage);
+        long start = System.currentTimeMillis();
+        while (!util.isEmptySearchPage(page) && (limit == -1 || limit >= companies.size())) {
+            System.out.println(util.progress(start, 0, companies.size()) + "Scraping raw data for company search page " + currentPage);
             scrapeRawCompanies(page, companies);
             currentPage++;
             page.navigate(createCompanySearchUrl(urlParams, currentPage));
-            Util.wait(1000, 100);
+            util.doWait();
         }
 
         System.out.println();
         int currentCount = 1;
-        long start = System.currentTimeMillis();
         for (Company company : companies) {
-            System.out.println(Util.progress(start, currentCount, companies.size()) + " Scraping augmented data for "
+            System.out.println(util.progress(start, currentCount, companies.size()) + " Scraping augmented data for "
                     + company.getName() + ".");
             scrapeAugmentedCompany(page, company);
-            Util.wait(1000, 100);
+            util.doWait();
             currentCount++;
         }
 
-        Util.touchFile(pathToExcel);
+        util.touchFile(pathToExcel);
         ExcelDocument doc = new ExcelDocument();
         doc.getActiveSheet().insertTable("A1", companies);
         doc.saveAs(pathToExcel.toString());
@@ -185,11 +195,9 @@ public class CompanyScraper implements Callable<Integer> {
             for (String warning : warnings) {
                 System.out.println("\t" + warning);
             }
-            if(verbose) {
-                System.out.println("\nERRORS:");
-                for (String error : errors) {
-                    System.out.println("\t" + error);
-                }
+            System.out.println("\nERRORS:");
+            for (String error : errors) {
+                System.out.println("\t" + error);
             }
         }
 
@@ -236,9 +244,9 @@ public class CompanyScraper implements Callable<Integer> {
                 warnings.add("WARNING: Detected link shortener for domain of " + company.getName());
             }
         } catch (Exception e) {
-            errors.add("Something went wrong while fetching augmented data for " + company.getName() + "! We skipped it!");
+            errors.add("ERROR: Something went wrong while fetching augmented data for " + company.getName() + "! We skipped it!");
             if (verbose) {
-                errors.add(Util.stackTraceToString(e));
+                errors.add(util.stackTraceToString(e));
             }
         }
     }
@@ -274,20 +282,18 @@ public class CompanyScraper implements Callable<Integer> {
                     company.setLink(titleSpan.locator("a").getAttribute("href") + "about");
                     companies.add(company);
                 } else {
-                    System.out.println("Reached limit of " + limit + " companies!");
+                    System.out.println(util.progress() + "Reached limit of " + limit + " companies!");
                     break;
                 }
             } catch (Exception e) {
-                System.out.println("Something went wrong during try to fetch a raw company dataset. Skip it!");
-                if (verbose) {
-                    e.printStackTrace();
-                }
+                errors.add("ERROR: Something went wrong during try to fetch a raw company dataset. Skip it!");
+                errors.add(util.stackTraceToString(e));
             }
         }
     }
 
     private String createCompanySearchUrl(Map<String, List<String>> urlParams, int currentPage) {
-        String result = Util.createUrl(
+        String result = util.createUrl(
                 "https://www.linkedin.com/search/results/companies/",
                 urlParams,
                 List.of(
@@ -301,11 +307,11 @@ public class CompanyScraper implements Callable<Integer> {
     }
 
     private void navigateToInitialSearchPage(Page page) {
-        System.out.println("Navigating to search page ...");
+        System.out.println(util.progress() + "Navigating to search page ...");
         page.navigate("https://www.linkedin.com/search/results/companies/?origin=SWITCH_SEARCH_VERTICAL");
-        Util.buttonWithInput(page, "Standorte", "Ort hinzufügen", locations);
-        Util.buttonWithInput(page, "Branche", "Branche hinzufügen", industries);
-        Util.buttonWithMultiSelection(page, "Unternehmensgröße", translatedSizes);
+        util.buttonWithInput(page, "Standorte", "Ort hinzufügen", locations);
+        util.buttonWithInput(page, "Branche", "Branche hinzufügen", industries);
+        util.buttonWithMultiSelection(page, "Unternehmensgröße", translatedSizes);
         // if we do not wait until all parts are in the url the url is incorrect
         page.waitForURL(url -> url.contains("companySize") &&
                 url.contains("industryCompanyVertical") &&

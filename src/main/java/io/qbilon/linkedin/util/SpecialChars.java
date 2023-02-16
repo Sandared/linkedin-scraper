@@ -41,10 +41,18 @@ public class SpecialChars {
         replacements.put("ó", "o");
         replacements.put("ò", "o");
         replacements.put("ô", "o");
+        replacements.put("ø", "o");
 
         replacements.put("ú", "u");
         replacements.put("ù", "u");
         replacements.put("û", "u");
+        
+        replacements.put("č", "c");
+        replacements.put("ć", "c");
+        replacements.put("ç", "c");
+
+        replacements.put("ñ", "n");
+
     }
     
 }

@@ -29,25 +29,39 @@ import com.microsoft.playwright.options.BoundingBox;
 
 public class Util {
 
-    public static void buttonWithInput(Page page, String visibleButtonText, String visibleInputText,
+    private boolean verbose;
+    private int delay;
+    private int variance;
+    private Random rand = new Random();
+    private long startTime = System.currentTimeMillis();
+    private int count = 0;
+    private int size = 0;
+
+    public Util(boolean verbose, int delay) {
+        this.verbose = verbose;
+        this.delay = delay;
+        this.variance = delay / 10;
+    }
+
+    public void buttonWithInput(Page page, String visibleButtonText, String visibleInputText,
             List<String> textsToType) {
         page.waitForSelector("text=\"" + visibleButtonText + "\"");
         Locator button = page.locator("text=\"" + visibleButtonText + "\"");
         button.click();
-        wait(1000, 100);
+        wait(1000);
         Locator input = page.locator("input[placeholder=\"" + visibleInputText + "\"]");
         BoundingBox box = input.boundingBox();
 
         for (String textToType : textsToType) {
             page.mouse().click(box.x + box.width / 2, box.y + box.height / 2);
-            wait(500, 50);
+            wait(500);
             page.keyboard().insertText(textToType);
 
-            wait(1000, 100);
+            wait(1000);
 
             page.mouse().click(box.x + box.width / 2, box.y + box.height * 1.5);
 
-            wait(1000, 100);
+            wait(1000);
         }
 
         // This will find several elements, as each filter has the "Ergebnisse anzeigen"
@@ -56,17 +70,17 @@ public class Util {
         submitButton.click();
     }
 
-    public static void buttonWithMultiSelection(Page page, String visibleButtonText, List<String> selectionIds) {
+    public void buttonWithMultiSelection(Page page, String visibleButtonText, List<String> selectionIds) {
         page.waitForSelector("text=\"" + visibleButtonText + "\"");
         Locator button = page.locator("text=\"" + visibleButtonText + "\"");
         button.click();
-        wait(1000, 100);
+        wait(1000);
 
         for (String id : selectionIds) {
             Locator input = page.locator("#" + id);
             BoundingBox box = input.boundingBox();
             page.mouse().click(box.x + box.width / 2, box.y + box.height / 2);
-            wait(500, 50);
+            wait(500);
         }
         // This will find several elements, as each filter has the "Ergebnisse anzeigen"
         Locator submitButtons = page.locator("text=\"Ergebnisse anzeigen\"");
@@ -74,15 +88,7 @@ public class Util {
         submitButton.click();
     }
 
-    public static void wait(int millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static Map<String, List<String>> urlParams(URL url) {
+    public Map<String, List<String>> urlParams(URL url) {
         if (url.getQuery() == null || url.getQuery().isBlank()) {
             return Collections.emptyMap();
         }
@@ -92,7 +98,7 @@ public class Util {
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
     }
 
-    private static SimpleImmutableEntry<String, String> splitQueryParameter(String it) {
+    private SimpleImmutableEntry<String, String> splitQueryParameter(String it) {
         final int idx = it.indexOf("=");
         final String key = idx > 0 ? it.substring(0, idx) : it;
         final String value = idx > 0 && it.length() > idx + 1 ? it.substring(idx + 1) : null;
@@ -101,8 +107,8 @@ public class Util {
                 URLDecoder.decode(value, StandardCharsets.UTF_8));
     }
 
-    public static Browser createBrowser(Playwright playwright, Path pathToContext) {
-        System.out.println("Starting browser ...");
+    public Browser createBrowser(Playwright playwright, Path pathToContext) {
+        System.out.println(progress() + "Starting browser ...");
         Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(false));
         if (!pathToContext.toFile().exists()) {
             // create the file
@@ -118,7 +124,7 @@ public class Util {
         return browser;
     }
 
-    public static void touchFile(Path filePath) {
+    public void touchFile(Path filePath) {
         if (!filePath.toFile().exists()) {
             // create the file
             try {
@@ -130,12 +136,12 @@ public class Util {
         }
     }
 
-    public static Page loginToLinkedIn(BrowserContext context, String email, String password) {
+    public Page loginToLinkedIn(BrowserContext context, String email, String password) {
         Page page = context.newPage();
         page.navigate("https://www.linkedin.com/feed");
 
         if (page.url().startsWith("https://www.linkedin.com/signup/")) {
-            System.out.println("Detected redirect, logging in as user with provided credentials...");
+            System.out.println(progress() + "Detected redirect, logging in as user with provided credentials...");
             // we were redirected to login -> so login again
             page.navigate("https://www.linkedin.com/login");
             page.locator("#username").fill(email);
@@ -146,7 +152,7 @@ public class Util {
         return page;
     }
 
-    public static String createUrl(String baseUrl, Map<String, List<String>> params, List<String> usedParams) {
+    public String createUrl(String baseUrl, Map<String, List<String>> params, List<String> usedParams) {
         StringBuilder sb = new StringBuilder();
         sb.append(baseUrl + "?");
         List<String> processedParams = usedParams.stream().map(param -> {
@@ -161,11 +167,11 @@ public class Util {
         return sb.toString();
     }
 
-    public static boolean isEmptySearchPage(Page page){
+    public boolean isEmptySearchPage(Page page){
         page.waitForSelector(".search-results-container");
         Locator resultItems = page.locator(".search-results-container").locator("li.reusable-search__result-container");
         if(resultItems.count() == 0) {
-            System.out.println("Detected empty search page!");
+            System.out.println(progress() + "Detected empty search page!");
             return true;
         }
         return false;
@@ -175,15 +181,14 @@ public class Util {
      * Can be used to highlight a element (e.g. if you want to make sure you got the right css selector)
      * @param locator the element to highlight
      */
-    public static void highlight(Locator locator) {
+    public void highlight(Locator locator) {
         locator.evaluate("(ele) => (ele.style.border = '3px solid red')");
     }
     
-    private static Random rand = new Random();
-    public static void wait(int millis, int millisVariation) {
+    public void doWait() {
         boolean addition = rand.nextBoolean();
-        int variation = rand.nextInt(millisVariation);
-        int waitTime = millis;
+        int variation = rand.nextInt(variance);
+        int waitTime = delay;
         if(addition) {
             waitTime = waitTime + variation;
         } else {
@@ -192,20 +197,40 @@ public class Util {
         wait(waitTime);
     }
 
-    public static String stackTraceToString(Exception e) {
-        StringWriter sw = new StringWriter();
-        PrintWriter pw = new PrintWriter(sw);
-        e.printStackTrace(pw);
-        return sw.toString();
+    private void wait(int millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
-    public static String progress(Long startTime, int count, int size) {
+    public String stackTraceToString(Exception e) {
+        if(verbose) {
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+            return sw.toString();
+        } 
+        return e.getMessage();
+    }
+
+    public String progress() {
+        return progress(startTime, count, size);
+    }
+
+    public String progress(Long startTime, int count, int size) {
+        // save for internal messages
+        this.startTime = startTime;
+        this.count = count;
+        this.size = size;
+
         long currentTime = System.currentTimeMillis();
         long elapsed = currentTime - startTime;
         return "(" + count + "/" + size + ") - " + toTime(elapsed) + " | ";
     }
 
-    private static String toTime(long millis) {
+    private String toTime(long millis) {
         return String.format("%02d:%02d:%02d",
                 TimeUnit.MILLISECONDS.toHours(millis),
                 TimeUnit.MILLISECONDS.toMinutes(millis) -

@@ -29,6 +29,8 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.microsoft.playwright.Browser;
@@ -75,6 +77,9 @@ public class LeadScraper implements Callable<Integer> {
     @Option(names = { "-a",
             "--augment" }, description = "Toggles augmenting mode, i.e., all leads will be augmented with additional data like their last 3 jobs. This takes more time to scrape though")
     private boolean augment;
+    @Option(names = { "-d",
+        "-delay" }, description = "An optional delay in ms to use for all website interactions (default is 1000ms, variance is 10%)", defaultValue = "1000")
+    private int delay;
 
     private Path currentDir = Paths.get("").toAbsolutePath();
     private Path pathToContext = currentDir.resolve("state.json").toAbsolutePath();
@@ -83,6 +88,7 @@ public class LeadScraper implements Callable<Integer> {
     private SpecialChars specialChars = new SpecialChars();
     private RemovableNameSegments removableSegments = new RemovableNameSegments();
     private JobDescriptors jobDescriptors = new JobDescriptors();
+    private Util util;
 
     private List<String> errors = new ArrayList<>();
 
@@ -94,6 +100,7 @@ public class LeadScraper implements Callable<Integer> {
     @Override
     public Integer call() {
         validateInput();
+        init();
 
         System.out.println();
         System.out.println("Starting LinkedIn Lead Scraper in directory " + currentDir + " with:");
@@ -101,9 +108,10 @@ public class LeadScraper implements Callable<Integer> {
         System.out.println("\tpassword = " + password);
         System.out.println("\tcompanies = " + companiesExcelFile.getAbsolutePath().toString());
         System.out.println("\tduplicates = " + duplicatesExcelFile.getAbsolutePath().toString());
-        System.out.println("\tsearchTerms = ");
         System.out.println("\tverbose = " + verbose);
         System.out.println("\taugment = " + augment);
+        System.out.println("\tdelay = " + delay);
+        System.out.println("\tsearchTerms = ");
         for (Entry<String, Integer> entry : searchTerms.entrySet()) {
             System.out.println("\t\t" + entry.getKey() + " = " + entry.getValue());
         }
@@ -120,6 +128,10 @@ public class LeadScraper implements Callable<Integer> {
             return 1;
         }
         return 0;
+    }
+
+    private void init() {
+        util = new Util(verbose, delay);
     }
 
     private void validateInput() {
@@ -151,9 +163,9 @@ public class LeadScraper implements Callable<Integer> {
     }
 
     private void run(Playwright playwright) throws MalformedURLException {
-        Browser browser = Util.createBrowser(playwright, pathToContext);
+        Browser browser = util.createBrowser(playwright, pathToContext);
         BrowserContext context = browser.contexts().get(0);
-        Page page = Util.loginToLinkedIn(context, email, password);
+        Page page = util.loginToLinkedIn(context, email, password);
 
         ExcelDocument companiesExcel = new ExcelDocument(companiesExcelFile.getAbsolutePath().toString());
         Sheet companiesSheet = companiesExcel.getActiveSheet();
@@ -195,17 +207,17 @@ public class LeadScraper implements Callable<Integer> {
     }
 
     private void augmentAndSaveScrapedLeads(Page page, List<Lead> leads) {
-        System.out.println("Augmenting scraped leads with additional job information.");
-        Util.touchFile(pathToAugmentedLeadExcel);
+        System.out.println(util.progress() + "Augmenting scraped leads with additional job information.");
+        util.touchFile(pathToAugmentedLeadExcel);
         ExcelDocument doc = new ExcelDocument();
         long start = System.currentTimeMillis();
         int count = 1;
         for (Lead lead : leads) {
             try {
-                System.out.println(Util.progress(start, count, leads.size()) + "Augmenting " + lead.getEmail());
+                System.out.println(util.progress(start, count, leads.size()) + "Augmenting " + lead.getEmail());
                 page.navigate(lead.getProfileLink());
                 page.waitForSelector("section:has(> #experience)");
-                Util.wait(500, 100);
+                util.doWait();
                 // select the parent of the experience div
                 Locator experienceSection = page.locator("section:has(> #experience)");
                 Locator stations = experienceSection.locator("> div.pvs-list__outer-container > ul.pvs-list > li");
@@ -252,9 +264,7 @@ public class LeadScraper implements Callable<Integer> {
                 }
             } catch (Exception e) {
                 errors.add("Failed to augment lead " + lead.getFirstName() + " " + lead.getLastName() + "! Skip it.");
-                if (verbose) {
-                    errors.add(Util.stackTraceToString(e));
-                }
+                errors.add(util.stackTraceToString(e));
             }
             count++;
         }
@@ -267,7 +277,7 @@ public class LeadScraper implements Callable<Integer> {
     private List<Lead> scrapeAndSaveRawDeduplicatedLeads(Page page, Table<Company> companyTable,
             Set<String> existingContacts) {
         Map<String, Lead> allDeduplicatedLeads = new HashMap<>();
-        Util.touchFile(pathToLeadExcel);
+        util.touchFile(pathToLeadExcel);
         ExcelDocument doc = new ExcelDocument();
         // Search all Companies for all searchterms
         long start = System.currentTimeMillis();
@@ -278,18 +288,18 @@ public class LeadScraper implements Callable<Integer> {
                 System.out.println();
                 navigateToInitialSearchPage(page, company, searchTerms.entrySet().iterator().next().getKey());
                 Map<String, List<String>> urlParams = null;
-                urlParams = Util.urlParams(new URL(page.url()));
+                urlParams = util.urlParams(new URL(page.url()));
                 for (Entry<String, Integer> entry : searchTerms.entrySet()) {
                     Map<String, Lead> deduplicatedLeads = new HashMap<>();
                     Integer currentPage = 1;
                     Integer maxNrLeads = entry.getValue();
                     String searchTerm = entry.getKey();
                     page.navigate(createLeadSearchUrl(urlParams, searchTerm, currentPage));
-                    Util.wait(1000, 200);
-                    while (!Util.isEmptySearchPage(page)
+                    util.doWait();
+                    while (!util.isEmptySearchPage(page)
                             && (maxNrLeads == -1 || maxNrLeads > deduplicatedLeads.size())) {
                         try {
-                            System.out.println(Util.progress(start, counter, total) + "Scraping raw lead data for '" + company.getName()
+                            System.out.println(util.progress(start, counter, total) + "Scraping raw lead data for '" + company.getName()
                                     + "' and search term '" + searchTerm + "' on page " + currentPage);
                             scrapeRawLeads(page, company, deduplicatedLeads, existingContacts, maxNrLeads);
                             currentPage++;
@@ -297,24 +307,20 @@ public class LeadScraper implements Callable<Integer> {
                                 break;
                             }
                             page.navigate(createLeadSearchUrl(urlParams, searchTerm, currentPage));
-                            Util.wait(1000, 200);
+                            util.doWait();
                         } catch (Exception e) {
                             errors.add("Failed to scrape leads for '" + company.getName() + "' and search term '"
                                     + searchTerm + "' on page " + currentPage + "!. Skip it!");
-                            if (verbose) {
-                                errors.add(Util.stackTraceToString(e));
-                            }
+                            errors.add(util.stackTraceToString(e));
                         }
                     }
                     allDeduplicatedLeads.putAll(deduplicatedLeads);
                 }
             } catch (Exception e) {
                 errors.add("Failed to scrape leads for '" + company.getName() + "!. Skip it!");
-                if (verbose) {
-                    errors.add(Util.stackTraceToString(e));
-                }
+                errors.add(util.stackTraceToString(e));
             }
-            System.out.println(Util.progress(start, counter, total) + "Currently found " + allDeduplicatedLeads.size() + " potential, deduplicated leads in total");
+            System.out.println(util.progress(start, counter, total) + "Currently found " + allDeduplicatedLeads.size() + " potential, deduplicated leads in total");
             counter++;
         }
 
@@ -327,7 +333,7 @@ public class LeadScraper implements Callable<Integer> {
     }
 
     private String createLeadSearchUrl(Map<String, List<String>> urlParams, String searchTerm, int currentPage) {
-        String result = Util.createUrl(
+        String result = util.createUrl(
                 "https://www.linkedin.com/search/results/people/",
                 urlParams,
                 List.of(
@@ -365,9 +371,7 @@ public class LeadScraper implements Callable<Integer> {
                     }
                 } catch (Exception e) {
                     errors.add("Failed to scrape single lead data! Skip it.");
-                    if (verbose) {
-                        errors.add(Util.stackTraceToString(e));
-                    }
+                    errors.add(util.stackTraceToString(e));
                 }
             } else {
                 break;
@@ -388,27 +392,80 @@ public class LeadScraper implements Callable<Integer> {
     private String getEmail(Lead lead, Company company) {
         String firstName = lead.getFirstName().toLowerCase().replace(".", "").replace(" ", ".");
         String lastName = lead.getLastName().toLowerCase().replace(".", "").replace(" ", ".");
-        ;
+        firstName = firstName.replace("-", ".").replace("'", ".");
+        lastName = lastName.replace("-", ".").replace("'", ".");
         String domain = company.getDomain();
         return firstName + "." + lastName + "@" + domain;
     }
 
     private void setFirstAndLastName(Lead lead, String name) {
         String nameToLower = name.toLowerCase();
-        // somehow replace special characters? at least äöüßéèêáàâôóòûùúû
+        // some names contain a ',' and then some stuff after it (titles usually) that we can discard
+        if(nameToLower.contains(",")) {
+            nameToLower = nameToLower.substring(0, nameToLower.indexOf(",")).trim();
+        }
+        // some names contain stuff in parenthesis, also mostly titles
+        nameToLower = filterTextBetweenParenthesis(nameToLower).trim();
+        // Some special people think that emojis should be part of your name Linkedin -.-
+        nameToLower = filterEmoji(nameToLower).trim();
+        // replace most common special characters
         for (String special : specialChars.specials()) {
-            nameToLower.replace(special, specialChars.replacementFor(special));
+            nameToLower = nameToLower.replace(special, specialChars.replacementFor(special)).trim();
         }
         // replace unwanted name segments
         for (String removableSegment : removableSegments.removableSegments()) {
-            nameToLower.replace(removableSegment, "");
+            nameToLower = nameToLower.replace(removableSegment, "").trim();
         }
 
         // now split it into first name and last name
-        String firstName = nameToLower.substring(0, nameToLower.lastIndexOf(" "));
-        String lastName = nameToLower.substring(nameToLower.lastIndexOf(" ") + 1);
-        lead.setFirstName(capitalize(firstName));
-        lead.setLastName(capitalize(lastName));
+        String firstName = nameToLower.substring(0, nameToLower.lastIndexOf(" ")).trim();
+        String lastName = nameToLower.substring(nameToLower.lastIndexOf(" ") + 1).trim();
+        lead.setFirstName(capitalizeSpecialCases(firstName).trim());
+        lead.setLastName(capitalizeSpecialCases(lastName).trim());
+    }
+
+    private String capitalizeSpecialCases(String name) {
+        // the first name might currently be in the format "aaa-bbb ccc"
+        // result should be Aaa-Bbb Ccc
+        String[] segments = name.split(" ");
+        for (int j = 0; j > segments.length; j++) {
+            String segment = segments[j];
+            if(segment.contains("-")) {
+                String[] subSegments = segment.split("-");
+                for (int i = 0; i < segments.length; i++) {
+                    subSegments[i] = capitalize(subSegments[i]);
+                }
+                segments[j] = String.join("-", subSegments);
+            } 
+        }
+        return String.join(" ", segments);
+    }
+
+    private String filterEmoji(String source) {
+        if (source != null) {
+            Pattern emoji = Pattern.compile("[\\x{10000}-\\x{10FFFF}]",
+                    Pattern.UNICODE_CASE | Pattern.CASE_INSENSITIVE);
+            Matcher emojiMatcher = emoji.matcher(source);
+            if (emojiMatcher.find()) {
+                source = emojiMatcher.replaceAll("");
+                return source;
+            }
+            return source;
+        }
+        return source;
+    }
+
+    private String filterTextBetweenParenthesis(String source) {
+        if (source != null) {
+            Pattern parenthesis = Pattern.compile("\\(.*?\\)");
+            Matcher parenthesisMatcher = parenthesis.matcher(source);
+            if (parenthesisMatcher.find()) {
+                source = parenthesisMatcher.replaceAll("");
+                return source;
+            }
+            return source;
+        }
+        return source;
     }
 
     private String capitalize(String str) {
@@ -419,11 +476,11 @@ public class LeadScraper implements Callable<Integer> {
 
     // https://www.linkedin.com/search/results/people/?currentCompany=["1043"]&geoUrn=["101282230"]&keywords=it&origin=GLOBAL_SEARCH_HEADER&sid=:lw
     private void navigateToInitialSearchPage(Page page, Company company, String searchTerm) {
-        System.out.println("Navigating to search page for '" + company.getName() + "' with search term '" + searchTerm + "' ...");
+        System.out.println(util.progress() + "Navigating to search page for '" + company.getName() + "' with search term '" + searchTerm + "' ...");
         page.navigate("https://www.linkedin.com/search/results/people/?keywords=" + searchTerm
                 + "&origin=SWITCH_SEARCH_VERTICAL");
-        Util.buttonWithInput(page, "Standorte", "Ort hinzufügen", locations);
-        Util.buttonWithInput(page, "Aktuelles Unternehmen", "Unternehmen hinzufügen", List.of(company.getName()));
+        util.buttonWithInput(page, "Standorte", "Ort hinzufügen", locations);
+        util.buttonWithInput(page, "Aktuelles Unternehmen", "Unternehmen hinzufügen", List.of(company.getName()));
         // if we do not wait until all parts are in the url the url is incorrect
         page.waitForURL(url -> url.contains("geoUrn") &&
                 url.contains("currentCompany") &&
