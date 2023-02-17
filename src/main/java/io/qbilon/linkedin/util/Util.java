@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -177,14 +178,6 @@ public class Util {
         return false;
     }
 
-    /**
-     * Can be used to highlight a element (e.g. if you want to make sure you got the right css selector)
-     * @param locator the element to highlight
-     */
-    public void highlight(Locator locator) {
-        locator.evaluate("(ele) => (ele.style.border = '3px solid red')");
-    }
-    
     public void doWait() {
         boolean addition = rand.nextBoolean();
         int variation = rand.nextInt(variance);
@@ -216,12 +209,11 @@ public class Util {
     }
 
     public String progress() {
-        return progress(startTime, count, size);
+        return progress(count, size);
     }
 
-    public String progress(Long startTime, int count, int size) {
+    public String progress(int count, int size) {
         // save for internal messages
-        this.startTime = startTime;
         this.count = count;
         this.size = size;
 
@@ -237,6 +229,14 @@ public class Util {
                         TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(millis)),
                 TimeUnit.MILLISECONDS.toSeconds(millis) -
                         TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis)));
+    }
+
+    public void debug(Locator loc) {
+        if(loc != null && loc.count() > 0) {
+            for (Locator l : loc.all()) {
+                l.evaluate("(ele) => (ele.style.border = '3px solid red')");
+            }
+        }
     }
 
 }

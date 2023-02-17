@@ -77,9 +77,11 @@ public class LeadScraper implements Callable<Integer> {
     @Option(names = { "-a",
             "--augment" }, description = "Toggles augmenting mode, i.e., all leads will be augmented with additional data like their last 3 jobs. This takes more time to scrape though")
     private boolean augment;
-    @Option(names = { "-d",
-        "-delay" }, description = "An optional delay in ms to use for all website interactions (default is 1000ms, variance is 10%)", defaultValue = "1000")
+    @Option(names = { "-delay" }, description = "An optional delay in ms to use for all website interactions (default is 1000ms, variance is 10%)", defaultValue = "1000")
     private int delay;
+    @Option(names = { "--skip-raw" }, description = "If toggled this lets the scraper start after generating raw leads, i.e., it assumes a 'leads.xlsx' file in the current execution directory which it takes as a starting point")
+    private boolean skipRawPhase;
+
 
     private Path currentDir = Paths.get("").toAbsolutePath();
     private Path pathToContext = currentDir.resolve("state.json").toAbsolutePath();
@@ -106,15 +108,18 @@ public class LeadScraper implements Callable<Integer> {
         System.out.println("Starting LinkedIn Lead Scraper in directory " + currentDir + " with:");
         System.out.println("\temail = " + email);
         System.out.println("\tpassword = " + password);
-        System.out.println("\tcompanies = " + companiesExcelFile.getAbsolutePath().toString());
-        System.out.println("\tduplicates = " + duplicatesExcelFile.getAbsolutePath().toString());
+        if(!skipRawPhase) {
+            System.out.println("\tcompanies = " + companiesExcelFile.getAbsolutePath().toString());
+            System.out.println("\tduplicates = " + duplicatesExcelFile.getAbsolutePath().toString());
+            System.out.println("\tsearchTerms = ");
+            for (Entry<String, Integer> entry : searchTerms.entrySet()) {
+                System.out.println("\t\t" + entry.getKey() + " = " + entry.getValue());
+            }
+        }
         System.out.println("\tverbose = " + verbose);
         System.out.println("\taugment = " + augment);
+        System.out.println("\tskipRawPhase = " + skipRawPhase);
         System.out.println("\tdelay = " + delay);
-        System.out.println("\tsearchTerms = ");
-        for (Entry<String, Integer> entry : searchTerms.entrySet()) {
-            System.out.println("\t\t" + entry.getKey() + " = " + entry.getValue());
-        }
         System.out.println();
 
         try (Playwright playwright = Playwright.create()) {
@@ -135,7 +140,24 @@ public class LeadScraper implements Callable<Integer> {
     }
 
     private void validateInput() {
-        // only used for local testing!
+        if(!skipRawPhase) {
+            if (companiesExcelFile == null || !companiesExcelFile.exists()) {
+                System.out.println("You need to provide a company excel file!");
+                System.exit(1);
+            }
+            if (duplicatesExcelFile == null || !duplicatesExcelFile.exists()) {
+                System.out.println("You need to provide an excel file containing existing lead emails!");
+                System.exit(1);
+            }
+            if (locations == null || locations.isEmpty()) {
+                System.out.println("You need to provide at least one location!");
+                System.exit(1);
+            }
+            if (searchTerms == null || searchTerms.isEmpty()) {
+                System.out.println("You need to provide at least one search term!");
+                System.exit(1);
+            }
+        }
         if (email == null || email.isBlank()) {
             System.out.println("You need to provide an email!");
             System.exit(1);
@@ -144,42 +166,38 @@ public class LeadScraper implements Callable<Integer> {
             System.out.println("You need to provide a password!");
             System.exit(1);
         }
-        if (companiesExcelFile == null || !companiesExcelFile.exists()) {
-            System.out.println("You need to provide a company excel file!");
-            System.exit(1);
-        }
-        if (duplicatesExcelFile == null || !duplicatesExcelFile.exists()) {
-            System.out.println("You need to provide an excel file containing existing lead emails!");
-            System.exit(1);
-        }
-        if (locations == null || locations.isEmpty()) {
-            System.out.println("You need to provide at least one location!");
-            System.exit(1);
-        }
-        if (searchTerms == null || searchTerms.isEmpty()) {
-            System.out.println("You need to provide at least one search term!");
-            System.exit(1);
-        }
     }
 
     private void run(Playwright playwright) throws MalformedURLException {
         Browser browser = util.createBrowser(playwright, pathToContext);
         BrowserContext context = browser.contexts().get(0);
         Page page = util.loginToLinkedIn(context, email, password);
+        
+        List<Lead> leads;
+        if(!skipRawPhase) {
+            // do the full scraping process
+            ExcelDocument companiesExcel = new ExcelDocument(companiesExcelFile.getAbsolutePath().toString());
+            Sheet companiesSheet = companiesExcel.getActiveSheet();
+            Table<Company> companiesTable = companiesSheet.getTable("A1", Company.class);
+    
+            ExcelDocument contactsExcel = new ExcelDocument(duplicatesExcelFile.getAbsolutePath().toString());
+            Sheet contactsSheet = contactsExcel.getActiveSheet();
+            Table<Contact> contactsTable = contactsSheet.getTable("A1", Contact.class);
+    
+            Set<String> existingContacts = contactsTable.getRecords().stream().map(contact -> contact.getEmail())
+                    .filter(Objects::nonNull).collect(Collectors.toSet());
+                    
+            leads = scrapeAndSaveRawDeduplicatedLeads(page, companiesTable, existingContacts);
+        } else {
+            // assume there is already a raw list
+            System.out.println(util.progress() + "Starting from existing lead excel file at " + pathToLeadExcel.toString());
+            ExcelDocument leadExcel = new ExcelDocument(pathToLeadExcel.toString());
+            Sheet leadSheet = leadExcel.getActiveSheet();
+            Table<Lead> leadTable = leadSheet.getTable("A1", Lead.class);
+            leads = leadTable.getRecords();
+        }
 
-        ExcelDocument companiesExcel = new ExcelDocument(companiesExcelFile.getAbsolutePath().toString());
-        Sheet companiesSheet = companiesExcel.getActiveSheet();
-        Table<Company> companiesTable = companiesSheet.getTable("A1", Company.class);
-
-        ExcelDocument contactsExcel = new ExcelDocument(duplicatesExcelFile.getAbsolutePath().toString());
-        Sheet contactsSheet = contactsExcel.getActiveSheet();
-        Table<Contact> contactsTable = contactsSheet.getTable("A1", Contact.class);
-
-        Set<String> existingContacts = contactsTable.getRecords().stream().map(contact -> contact.getEmail())
-                .filter(Objects::nonNull).collect(Collectors.toSet());
-        List<Lead> leads = scrapeAndSaveRawDeduplicatedLeads(page, companiesTable, existingContacts);
-
-        if (augment) {
+        if (augment || skipRawPhase) {
             augmentAndSaveScrapedLeads(page, leads);
         }
 
@@ -189,7 +207,7 @@ public class LeadScraper implements Callable<Integer> {
         browser.close();
 
         System.out.println();
-        System.out.println("Finished Scraping!");
+        System.out.println(" +++++ FINISHED SCRAPING :) +++++");
         if (errors.size() > 0) {
             System.out.println("\nERRORS:");
             for (String error : errors) {
@@ -210,11 +228,10 @@ public class LeadScraper implements Callable<Integer> {
         System.out.println(util.progress() + "Augmenting scraped leads with additional job information.");
         util.touchFile(pathToAugmentedLeadExcel);
         ExcelDocument doc = new ExcelDocument();
-        long start = System.currentTimeMillis();
         int count = 1;
         for (Lead lead : leads) {
             try {
-                System.out.println(util.progress(start, count, leads.size()) + "Augmenting " + lead.getEmail());
+                System.out.println(util.progress(count, leads.size()) + "Augmenting " + lead.getEmail());
                 page.navigate(lead.getProfileLink());
                 page.waitForSelector("section:has(> #experience)");
                 util.doWait();
@@ -228,23 +245,24 @@ public class LeadScraper implements Callable<Integer> {
                     if (jobDescriptions.size() >= maxNumJobs) {
                         break;
                     }
-                    Locator subStations = station.locator("div.pvs-entity--with-path");
-                    if (subStations.count() > 0) {
-                        // scrape the list of substations in a station card
-                        for (Locator subStation : subStations.all()) {
-                            try {
-                                if (jobDescriptions.size() >= maxNumJobs) {
-                                    break jobs;
-                                }
-                                Locator jobTitle = subStation.locator("a div:first-child");
-                                jobDescriptions.add(jobTitle.textContent().trim());
-                            } catch (Exception e) {
-                                // ignore and skip
-                            }
-                        }
-                    } else {
-                        Locator jobTitle = station.locator("span.t-bold > span[aria-hidden]");
+                    Locator subDivs = station.locator("> div > div:nth-child(2) > div");
+                    if(subDivs.count() == 1) {
+                        // normal station
+                        Locator jobTitle = station.locator("> div > div > div > div > div > span > span[aria-hidden]");
+                        util.debug(jobTitle);
                         jobDescriptions.add(jobTitle.textContent().trim());
+                    } else {
+                        // fetch the second div that contains all subStations
+                        Locator subStations = subDivs.all().get(1);
+                        // station with substations
+                        Locator jobTitles = subStations.locator("> ul.pvs-list > li > div > div > div > a > div > span > span[aria-hidden]");
+                        util.debug(jobTitles);
+                        for (Locator jobTitle : jobTitles.all()) {
+                            if (jobDescriptions.size() >= maxNumJobs) {
+                                break jobs;
+                            }
+                            jobDescriptions.add(jobTitle.textContent().trim());
+                        }
                     }
                 }
 
@@ -280,7 +298,6 @@ public class LeadScraper implements Callable<Integer> {
         util.touchFile(pathToLeadExcel);
         ExcelDocument doc = new ExcelDocument();
         // Search all Companies for all searchterms
-        long start = System.currentTimeMillis();
         int counter = 1;
         int total = companyTable.getRecords().size();
         for (Company company : companyTable) {
@@ -299,7 +316,7 @@ public class LeadScraper implements Callable<Integer> {
                     while (!util.isEmptySearchPage(page)
                             && (maxNrLeads == -1 || maxNrLeads > deduplicatedLeads.size())) {
                         try {
-                            System.out.println(util.progress(start, counter, total) + "Scraping raw lead data for '" + company.getName()
+                            System.out.println(util.progress(counter, total) + "Scraping raw lead data for '" + company.getName()
                                     + "' and search term '" + searchTerm + "' on page " + currentPage);
                             scrapeRawLeads(page, company, deduplicatedLeads, existingContacts, maxNrLeads);
                             currentPage++;
@@ -320,7 +337,7 @@ public class LeadScraper implements Callable<Integer> {
                 errors.add("Failed to scrape leads for '" + company.getName() + "!. Skip it!");
                 errors.add(util.stackTraceToString(e));
             }
-            System.out.println(util.progress(start, counter, total) + "Currently found " + allDeduplicatedLeads.size() + " potential, deduplicated leads in total");
+            System.out.println(util.progress(counter, total) + "Currently found " + allDeduplicatedLeads.size() + " potential, deduplicated leads in total");
             counter++;
         }
 

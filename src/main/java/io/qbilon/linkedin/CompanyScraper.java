@@ -159,9 +159,8 @@ public class CompanyScraper implements Callable<Integer> {
         List<Company> companies = new ArrayList<>();
 
         System.out.println();
-        long start = System.currentTimeMillis();
         while (!util.isEmptySearchPage(page) && (limit == -1 || limit >= companies.size())) {
-            System.out.println(util.progress(start, 0, companies.size()) + "Scraping raw data for company search page " + currentPage);
+            System.out.println(util.progress(0, companies.size()) + "Scraping raw data for company search page " + currentPage);
             scrapeRawCompanies(page, companies);
             currentPage++;
             page.navigate(createCompanySearchUrl(urlParams, currentPage));
@@ -171,7 +170,7 @@ public class CompanyScraper implements Callable<Integer> {
         System.out.println();
         int currentCount = 1;
         for (Company company : companies) {
-            System.out.println(util.progress(start, currentCount, companies.size()) + " Scraping augmented data for "
+            System.out.println(util.progress(currentCount, companies.size()) + " Scraping augmented data for "
                     + company.getName() + ".");
             scrapeAugmentedCompany(page, company);
             util.doWait();
