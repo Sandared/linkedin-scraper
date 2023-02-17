@@ -125,9 +125,7 @@ public class LeadScraper implements Callable<Integer> {
         try (Playwright playwright = Playwright.create()) {
             run(playwright);
         } catch (Exception e) {
-            if (verbose) {
-                e.printStackTrace();
-            }
+            e.printStackTrace();
             System.out.println(
                     "Something went wrong. Sometimes this is due to a timing error. In this case just retry it. If the error persists, you could toggle verbose mode with '-v' in order to get more information");
             return 1;
@@ -230,6 +228,7 @@ public class LeadScraper implements Callable<Integer> {
         ExcelDocument doc = new ExcelDocument();
         int count = 1;
         for (Lead lead : leads) {
+
             try {
                 System.out.println(util.progress(count, leads.size()) + "Augmenting " + lead.getEmail());
                 page.navigate(lead.getProfileLink());
@@ -380,7 +379,7 @@ public class LeadScraper implements Callable<Integer> {
                     lead.setProfileLink(link.substring(0, link.indexOf("?")));
                     setFirstAndLastName(lead, nameSpan.textContent().trim());
                     lead.setJobTitle(getJobTitle(company, jobSpan.textContent().trim()));
-                    lead.setEmail(getEmail(lead, company));
+                    lead.setEmail(getEmail(lead, company.getDomain()));
                     lead.setIndustry(company.getIndustry());
 
                     if (!existingContacts.contains(lead.getEmail())) {
@@ -406,12 +405,11 @@ public class LeadScraper implements Callable<Integer> {
         return jobTitle;
     }
 
-    private String getEmail(Lead lead, Company company) {
+    private String getEmail(Lead lead, String domain ) {
         String firstName = lead.getFirstName().toLowerCase().replace(".", "").replace(" ", ".");
         String lastName = lead.getLastName().toLowerCase().replace(".", "").replace(" ", ".");
         firstName = firstName.replace("-", ".").replace("'", ".");
         lastName = lastName.replace("-", ".").replace("'", ".");
-        String domain = company.getDomain();
         return firstName + "." + lastName + "@" + domain;
     }
 
@@ -445,7 +443,7 @@ public class LeadScraper implements Callable<Integer> {
         // the first name might currently be in the format "aaa-bbb ccc"
         // result should be Aaa-Bbb Ccc
         String[] segments = name.split(" ");
-        for (int j = 0; j > segments.length; j++) {
+        for (int j = 0; j < segments.length; j++) {
             String segment = segments[j];
             if(segment.contains("-")) {
                 String[] subSegments = segment.split("-");
@@ -453,7 +451,9 @@ public class LeadScraper implements Callable<Integer> {
                     subSegments[i] = capitalize(subSegments[i]);
                 }
                 segments[j] = String.join("-", subSegments);
-            } 
+            } else {
+                segments[j] = capitalize(segment);
+            }
         }
         return String.join(" ", segments);
     }
