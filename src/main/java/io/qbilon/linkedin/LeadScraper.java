@@ -74,13 +74,12 @@ public class LeadScraper implements Callable<Integer> {
     @Option(names = { "-v",
             "--verbose" }, description = "Toggles verbose mode, e.g., prints exceptions")
     private boolean verbose;
-    @Option(names = { "-a",
-            "--augment" }, description = "Toggles augmenting mode, i.e., all leads will be augmented with additional data like their last 3 jobs. This takes more time to scrape though")
-    private boolean augment;
     @Option(names = { "-delay" }, description = "An optional delay in ms to use for all website interactions (default is 1000ms, variance is 10%)", defaultValue = "1000")
     private int delay;
-    @Option(names = { "--skip-raw" }, description = "If toggled this lets the scraper start after generating raw leads, i.e., it assumes a 'leads.xlsx' file in the current execution directory which it takes as a starting point")
-    private boolean skipRawPhase;
+    @Option(names = { "--skip-augmented" }, description = "If toggled this lets the scraper skip the augmentation phase of lead scraping.")
+    private boolean skipAugmented;
+    @Option(names = { "--skip-raw" }, description = "If toggled this lets the scraper skip the phase of raw lead scraping")
+    private boolean skipRaw;
 
 
     private Path currentDir = Paths.get("").toAbsolutePath();
@@ -108,7 +107,7 @@ public class LeadScraper implements Callable<Integer> {
         System.out.println("Starting LinkedIn Lead Scraper in directory " + currentDir + " with:");
         System.out.println("\temail = " + email);
         System.out.println("\tpassword = " + password);
-        if(!skipRawPhase) {
+        if(!skipRaw) {
             System.out.println("\tcompanies = " + companiesExcelFile.getAbsolutePath().toString());
             System.out.println("\tduplicates = " + duplicatesExcelFile.getAbsolutePath().toString());
             System.out.println("\tsearchTerms = ");
@@ -117,8 +116,8 @@ public class LeadScraper implements Callable<Integer> {
             }
         }
         System.out.println("\tverbose = " + verbose);
-        System.out.println("\taugment = " + augment);
-        System.out.println("\tskipRawPhase = " + skipRawPhase);
+        System.out.println("\tskipAugmented = " + skipAugmented);
+        System.out.println("\tskipRaw = " + skipRaw);
         System.out.println("\tdelay = " + delay);
         System.out.println();
 
@@ -138,7 +137,7 @@ public class LeadScraper implements Callable<Integer> {
     }
 
     private void validateInput() {
-        if(!skipRawPhase) {
+        if(!skipRaw) {
             if (companiesExcelFile == null || !companiesExcelFile.exists()) {
                 System.out.println("You need to provide a company excel file!");
                 System.exit(1);
@@ -171,8 +170,8 @@ public class LeadScraper implements Callable<Integer> {
         BrowserContext context = browser.contexts().get(0);
         Page page = util.loginToLinkedIn(context, email, password);
         
-        List<Lead> leads;
-        if(!skipRawPhase) {
+        List<Lead> leads = new ArrayList<>();
+        if(!skipRaw) {
             // do the full scraping process
             ExcelDocument companiesExcel = new ExcelDocument(companiesExcelFile.getAbsolutePath().toString());
             Sheet companiesSheet = companiesExcel.getActiveSheet();
@@ -187,15 +186,17 @@ public class LeadScraper implements Callable<Integer> {
                     
             leads = scrapeAndSaveRawDeduplicatedLeads(page, companiesTable, existingContacts);
         } else {
-            // assume there is already a raw list
-            System.out.println(util.progress() + "Starting from existing lead excel file at " + pathToLeadExcel.toString());
-            ExcelDocument leadExcel = new ExcelDocument(pathToLeadExcel.toString());
-            Sheet leadSheet = leadExcel.getActiveSheet();
-            Table<Lead> leadTable = leadSheet.getTable("A1", Lead.class);
-            leads = leadTable.getRecords();
+            if(!skipAugmented) {
+                // assume there is already a raw list
+                System.out.println(util.progress() + "Starting from existing lead excel file at " + pathToLeadExcel.toString());
+                ExcelDocument leadExcel = new ExcelDocument(pathToLeadExcel.toString());
+                Sheet leadSheet = leadExcel.getActiveSheet();
+                Table<Lead> leadTable = leadSheet.getTable("A1", Lead.class);
+                leads = leadTable.getRecords();
+            }
         }
 
-        if (augment || skipRawPhase) {
+        if (!skipAugmented) {
             augmentAndSaveScrapedLeads(page, leads);
         }
 
@@ -212,14 +213,7 @@ public class LeadScraper implements Callable<Integer> {
                 System.out.println("\t" + error);
             }
         }
-        String path = "";
-        if (augment) {
-            path = pathToAugmentedLeadExcel.toString();
-        } else {
-            path = pathToLeadExcel.toString();
-        }
-        System.out.println("\nPlease review the scraped leads under " + path
-                + "! They might contain compromised data or unfitting leads");
+        System.out.println("\nPlease review the scraped leads! They might still contain compromised data or unfitting leads");
     }
 
     private void augmentAndSaveScrapedLeads(Page page, List<Lead> leads) {
@@ -280,7 +274,7 @@ public class LeadScraper implements Callable<Integer> {
                     lead.setPreviousJobTitle3(jobDescriptions.get(3));
                 }
             } catch (Exception e) {
-                errors.add("Failed to augment lead " + lead.getFirstName() + " " + lead.getLastName() + "! Skip it.");
+                errors.add("Failed to augment lead " + lead.getEmail() + " (" + lead.getProfileLink() + ")! Skip it.");
                 errors.add(util.stackTraceToString(e));
             }
             count++;
@@ -459,17 +453,16 @@ public class LeadScraper implements Callable<Integer> {
     }
 
     private String filterEmoji(String source) {
+        String result = source;
         if (source != null) {
             Pattern emoji = Pattern.compile("[\\x{10000}-\\x{10FFFF}]",
                     Pattern.UNICODE_CASE | Pattern.CASE_INSENSITIVE);
             Matcher emojiMatcher = emoji.matcher(source);
             if (emojiMatcher.find()) {
-                source = emojiMatcher.replaceAll("");
-                return source;
+                result = emojiMatcher.replaceAll("");
             }
-            return source;
         }
-        return source;
+        return result;
     }
 
     private String filterTextBetweenParenthesis(String source) {

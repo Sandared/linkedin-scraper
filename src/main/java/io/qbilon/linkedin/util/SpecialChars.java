@@ -53,6 +53,8 @@ public class SpecialChars {
 
         replacements.put("ñ", "n");
 
+        replacements.put("/", " ");
+
     }
     
 }

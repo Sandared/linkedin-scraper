@@ -121,7 +121,7 @@ public class Util {
             }
         }
         BrowserContext context = browser.newContext(new Browser.NewContextOptions().setStorageStatePath(pathToContext));
-        context.setDefaultTimeout(5000.0);
+        context.setDefaultTimeout(10000.0);
         return browser;
     }
 
