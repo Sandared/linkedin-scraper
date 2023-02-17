@@ -159,7 +159,7 @@ public class CompanyScraper implements Callable<Integer> {
         List<Company> companies = new ArrayList<>();
 
         System.out.println();
-        while (!util.isEmptySearchPage(page) && (limit == -1 || limit >= companies.size())) {
+        while (!util.isEmptySearchPage(page, "") && (limit == -1 || limit >= companies.size())) {
             System.out.println(util.progress(0, companies.size()) + "Scraping raw data for company search page " + currentPage);
             scrapeRawCompanies(page, companies);
             currentPage++;

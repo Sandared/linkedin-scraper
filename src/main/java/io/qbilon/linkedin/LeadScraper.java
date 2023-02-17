@@ -197,6 +197,8 @@ public class LeadScraper implements Callable<Integer> {
         }
 
         if (!skipAugmented) {
+            System.out.println();
+            System.out.println(util.progress() + "Starting augmentation of found leads!");
             augmentAndSaveScrapedLeads(page, leads);
         }
 
@@ -306,7 +308,7 @@ public class LeadScraper implements Callable<Integer> {
                     String searchTerm = entry.getKey();
                     page.navigate(createLeadSearchUrl(urlParams, searchTerm, currentPage));
                     util.doWait();
-                    while (!util.isEmptySearchPage(page)
+                    while (!util.isEmptySearchPage(page, " for '" + company.getName() + "' and searchTerm '" + searchTerm + "'")
                             && (maxNrLeads == -1 || maxNrLeads > deduplicatedLeads.size())) {
                         try {
                             System.out.println(util.progress(counter, total) + "Scraping raw lead data for '" + company.getName()
@@ -321,14 +323,14 @@ public class LeadScraper implements Callable<Integer> {
                         } catch (Exception e) {
                             errors.add("Failed to scrape leads for '" + company.getName() + "' and search term '"
                                     + searchTerm + "' on page " + currentPage + "!. Skip it!");
-                            errors.add(util.stackTraceToString(e));
+                            // errors.add(util.stackTraceToString(e));
                         }
                     }
                     allDeduplicatedLeads.putAll(deduplicatedLeads);
                 }
             } catch (Exception e) {
                 errors.add("Failed to scrape leads for '" + company.getName() + "!. Skip it!");
-                errors.add(util.stackTraceToString(e));
+                // errors.add(util.stackTraceToString(e));
             }
             System.out.println(util.progress(counter, total) + "Currently found " + allDeduplicatedLeads.size() + " potential, deduplicated leads in total");
             counter++;
@@ -339,6 +341,8 @@ public class LeadScraper implements Callable<Integer> {
         doc.getActiveSheet().insertTable("A1", leads);
         doc.saveAs(pathToLeadExcel.toString());
         doc.close();
+        System.out.println("Finished raw lead generation");
+        System.out.println(util.progress() + "Saved raw leads at " + pathToLeadExcel.toAbsolutePath());
         return leads;
     }
 
@@ -486,7 +490,7 @@ public class LeadScraper implements Callable<Integer> {
 
     // https://www.linkedin.com/search/results/people/?currentCompany=["1043"]&geoUrn=["101282230"]&keywords=it&origin=GLOBAL_SEARCH_HEADER&sid=:lw
     private void navigateToInitialSearchPage(Page page, Company company, String searchTerm) {
-        System.out.println(util.progress() + "Navigating to search page for '" + company.getName() + "' with search term '" + searchTerm + "' ...");
+        System.out.println(util.progress() + "Navigating to search page for '" + company.getName() + "' ...");
         page.navigate("https://www.linkedin.com/search/results/people/?keywords=" + searchTerm
                 + "&origin=SWITCH_SEARCH_VERTICAL");
         util.buttonWithInput(page, "Standorte", "Ort hinzufügen", locations);

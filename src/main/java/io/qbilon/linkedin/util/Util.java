@@ -168,11 +168,11 @@ public class Util {
         return sb.toString();
     }
 
-    public boolean isEmptySearchPage(Page page){
+    public boolean isEmptySearchPage(Page page, String additionalInfo){
         page.waitForSelector(".search-results-container");
         Locator resultItems = page.locator(".search-results-container").locator("li.reusable-search__result-container");
         if(resultItems.count() == 0) {
-            System.out.println(progress() + "Detected empty search page!");
+            System.out.println(progress() + "Detected empty search page " + additionalInfo);
             return true;
         }
         return false;
