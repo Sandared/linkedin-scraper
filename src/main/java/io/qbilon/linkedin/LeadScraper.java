@@ -447,7 +447,7 @@ public class LeadScraper implements Callable<Integer> {
             String segment = segments[j];
             if(segment.contains("-")) {
                 String[] subSegments = segment.split("-");
-                for (int i = 0; i < segments.length; i++) {
+                for (int i = 0; i < subSegments.length; i++) {
                     subSegments[i] = capitalize(subSegments[i]);
                 }
                 segments[j] = String.join("-", subSegments);
