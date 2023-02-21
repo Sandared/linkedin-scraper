@@ -15,7 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -41,7 +40,7 @@ public class Util {
     public Util(boolean verbose, int delay) {
         this.verbose = verbose;
         this.delay = delay;
-        this.variance = delay / 10;
+        this.variance = delay / 2;
     }
 
     public void buttonWithInput(Page page, String visibleButtonText, String visibleInputText,
@@ -49,20 +48,20 @@ public class Util {
         page.waitForSelector("text=\"" + visibleButtonText + "\"");
         Locator button = page.locator("text=\"" + visibleButtonText + "\"");
         button.click();
-        wait(1000);
+        doWait(1000, 250);
         Locator input = page.locator("input[placeholder=\"" + visibleInputText + "\"]");
         BoundingBox box = input.boundingBox();
 
         for (String textToType : textsToType) {
             page.mouse().click(box.x + box.width / 2, box.y + box.height / 2);
-            wait(500);
+            doWait(500, 150);
             page.keyboard().insertText(textToType);
 
-            wait(1000);
+            doWait(1000, 250);
 
             page.mouse().click(box.x + box.width / 2, box.y + box.height * 1.5);
 
-            wait(1000);
+            doWait(1000, 250);
         }
 
         // This will find several elements, as each filter has the "Ergebnisse anzeigen"
@@ -75,13 +74,13 @@ public class Util {
         page.waitForSelector("text=\"" + visibleButtonText + "\"");
         Locator button = page.locator("text=\"" + visibleButtonText + "\"");
         button.click();
-        wait(1000);
+        doWait(1000, 250);
 
         for (String id : selectionIds) {
             Locator input = page.locator("#" + id);
             BoundingBox box = input.boundingBox();
             page.mouse().click(box.x + box.width / 2, box.y + box.height / 2);
-            wait(500);
+            doWait(500, 150);
         }
         // This will find several elements, as each filter has the "Ergebnisse anzeigen"
         Locator submitButtons = page.locator("text=\"Ergebnisse anzeigen\"");
@@ -179,9 +178,13 @@ public class Util {
     }
 
     public void doWait() {
+        doWait(delay, variance);
+    }
+
+    private void doWait(int millis, int variance) {
         boolean addition = rand.nextBoolean();
         int variation = rand.nextInt(variance);
-        int waitTime = delay;
+        int waitTime = millis;
         if(addition) {
             waitTime = waitTime + variation;
         } else {

@@ -74,7 +74,7 @@ public class LeadScraper implements Callable<Integer> {
     @Option(names = { "-v",
             "--verbose" }, description = "Toggles verbose mode, e.g., prints exceptions")
     private boolean verbose;
-    @Option(names = { "-delay" }, description = "An optional delay in ms to use for all website interactions (default is 1000ms, variance is 10%)", defaultValue = "1000")
+    @Option(names = { "-delay" }, description = "An optional delay in ms to use for all website interactions (default is 1000ms, variance is 50%)", defaultValue = "1000")
     private int delay;
     @Option(names = { "--skip-augmented" }, description = "If toggled this lets the scraper skip the augmentation phase of lead scraping.")
     private boolean skipAugmented;
