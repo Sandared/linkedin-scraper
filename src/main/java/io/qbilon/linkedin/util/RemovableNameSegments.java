@@ -16,10 +16,10 @@ public class RemovableNameSegments {
 
     private void init() {
         segments.add("prof.");
-        segments.add("prof");
-        segments.add("dr.-ing.");
+        segments.add("prof ");
+        segments.add("-ing.");
         segments.add("dr.");
-        segments.add("dr");
+        segments.add("dr ");
     }
     
 }
