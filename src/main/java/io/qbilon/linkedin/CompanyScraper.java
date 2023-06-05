@@ -309,8 +309,8 @@ public class CompanyScraper implements Callable<Integer> {
         System.out.println(util.progress() + "Navigating to search page ...");
         page.navigate("https://www.linkedin.com/search/results/companies/?origin=SWITCH_SEARCH_VERTICAL");
         util.buttonWithInput(page, "Standorte", "Ort hinzufügen", locations);
-        util.buttonWithInput(page, "Branche", "Branche hinzufügen", industries);
         util.buttonWithMultiSelection(page, "Unternehmensgröße", translatedSizes);
+        util.buttonWithInput(page, "Branche", "Branche hinzufügen", industries);
         // if we do not wait until all parts are in the url the url is incorrect
         page.waitForURL(url -> url.contains("companySize") &&
                 url.contains("industryCompanyVertical") &&
